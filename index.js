@@ -9,7 +9,7 @@ const firebaseConfig = {
     projectId: "clientesvip-be9bd",
     storageBucket: "clientesvip-be9bd.firebasestorage.app",
     messagingSenderId: "131036295027",
-    appId: "1:13103...", // <--- ¡OJO! COMPLETA TU APP ID AQUÍ
+    appId: "1:13103...", // <--- COMPLETA TU APP ID AQUÍ
     databaseURL: "https://clientesvip-be9bd-default-rtdb.firebaseio.com"
 };
 
@@ -21,8 +21,6 @@ const token = "7453033146:AAEGX-wStAm62_yguQaMrLSqLG2d9Q6oj9k";
 const ADMIN_ID = 7710633235;
 
 const bot = new TelegramBot(token, { polling: true });
-
-// Objeto para guardar en qué paso está cada usuario
 const estados = {};
 
 // ================= FUNCIONES DE TECLADO =================
@@ -33,18 +31,15 @@ async function mostrarTecladoPaises(chatId, mensaje) {
             const keyboard = [];
             let fila = [];
             
-            // Crear botones con los países de la base de datos
             snapshot.forEach((hijo) => {
                 const pais = hijo.key;
                 fila.push(`📍 ${pais.toUpperCase()}`);
-                
-                // Agrupar de 2 en 2 para que el teclado se vea ordenado
                 if (fila.length === 2) {
                     keyboard.push(fila);
                     fila = [];
                 }
             });
-            if (fila.length > 0) keyboard.push(fila); // Agregar si sobra uno impar
+            if (fila.length > 0) keyboard.push(fila);
 
             bot.sendMessage(chatId, mensaje, {
                 reply_markup: {
@@ -60,45 +55,36 @@ async function mostrarTecladoPaises(chatId, mensaje) {
     }
 }
 
-// ================= LÓGICA DE MENSAJES Y BOTONES =================
-
-// El único comando necesario para arrancar
+// ================= LÓGICA DE MENSAJES =================
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    
     if (chatId === ADMIN_ID) {
-        // Teclado exclusivo para ti (Admin)
-        const adminKeyboard = {
+        bot.sendMessage(chatId, "👋 ¡Hola Admin LUCK XIT! ¿Qué deseas hacer?", {
             reply_markup: {
-                keyboard: [
-                    ["➕ Agregar Método"], 
-                    ["👀 Ver Teclado de Clientes"]
-                ],
+                keyboard: [["➕ Agregar Método Estilizado"], ["👀 Ver Teclado de Clientes"]],
                 resize_keyboard: true
             }
-        };
-        bot.sendMessage(chatId, "👋 ¡Hola Admin! ¿Qué deseas hacer?", adminKeyboard);
+        });
     } else {
-        // Teclado para usuarios normales
         mostrarTecladoPaises(chatId, "¡Hola! Selecciona tu país para generar el pago:");
     }
 });
 
-// Escuchar TODO el texto que entra (Botones y respuestas)
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const texto = msg.text;
 
-    if (texto === '/start') return; // Evitar que se cruce con la función de arriba
+    if (!texto || texto === '/start') return;
 
     // ================= FLUJO DEL ADMIN =================
     if (chatId === ADMIN_ID) {
-        if (texto === "➕ Agregar Método") {
-            estados[chatId] = { paso: "ESPERANDO_DATOS_METODO" };
-            const msjAyuda = "Escribe los datos separados por una coma (,)\n\nFormato:\n`Pais, Tasa, Banco, Cuenta`\n\nEjemplo:\n`Colombia, 3900, Nequi, 3214701288`";
+        if (texto === "➕ Agregar Método Estilizado") {
+            estados[chatId] = { paso: "ESPERANDO_DATOS_MULTILINEA" };
+            const msjAyuda = `Envíame los datos EXACTAMENTE en este orden, separados por un salto de línea (Enter):\n\n1. País\n2. Tasa de cambio\n3. Título del Banco con emojis\n4. Etiqueta de la cuenta\n5. Número de cuenta\n6. Instrucción final\n\n*Copialo y edítalo:* 👇\n\nColombia\n3800\n🟡 *Bancolombia* (🏦 TRANSFERENCIA)\n📋 N° Cuenta:\n76900007797\n💡 Transferencia Ahorros Bancolombia`;
+            
             return bot.sendMessage(chatId, msjAyuda, {
                 parse_mode: "Markdown",
-                reply_markup: { remove_keyboard: true } // Oculta los botones un momento
+                reply_markup: { remove_keyboard: true }
             });
         }
 
@@ -106,25 +92,35 @@ bot.on('message', async (msg) => {
             return mostrarTecladoPaises(chatId, "Así ven los clientes los botones:");
         }
 
-        // Si el admin está en el estado de agregar método y envía el texto:
-        if (estados[chatId] && estados[chatId].paso === "ESPERANDO_DATOS_METODO") {
-            const partes = texto.split(',').map(item => item.trim());
+        if (estados[chatId] && estados[chatId].paso === "ESPERANDO_DATOS_MULTILINEA") {
+            const lineas = texto.split('\n'); // Separamos el mensaje por cada "Enter"
             
-            if (partes.length === 4) {
-                const [pais, tasa, banco, cuenta] = partes;
-                const paisFormato = pais.toLowerCase();
+            if (lineas.length >= 6) {
+                const pais = lineas[0].trim().toLowerCase();
+                const tasa = parseFloat(lineas[1].trim());
+                const tituloBanco = lineas[2].trim();
+                const etiquetaCuenta = lineas[3].trim();
+                const numeroCuenta = lineas[4].trim();
+                const instruccion = lineas[5].trim();
+                
+                // Usamos el número de cuenta como ID único para guardarlo en la base de datos
+                const idMetodo = numeroCuenta.replace(/\s+/g, ''); 
 
                 try {
-                    await set(ref(db, `paises/${paisFormato}/tasa`), parseFloat(tasa));
-                    await set(ref(db, `paises/${paisFormato}/metodos/${banco}`), cuenta);
+                    await set(ref(db, `paises/${pais}/tasa`), tasa);
+                    await set(ref(db, `paises/${pais}/metodos/${idMetodo}`), {
+                        titulo: tituloBanco,
+                        etiqueta: etiquetaCuenta,
+                        cuenta: numeroCuenta,
+                        instruccion: instruccion
+                    });
                     
-                    bot.sendMessage(chatId, `✅ ¡Éxito! Método **${banco}** agregado a **${pais}**.`, {parse_mode: "Markdown"});
-                    delete estados[chatId]; // Limpiar el estado
+                    bot.sendMessage(chatId, `✅ ¡Éxito! Método agregado correctamente al país **${pais}**.`, {parse_mode: "Markdown"});
+                    delete estados[chatId];
                     
-                    // Volver a mostrar tu menú admin
                     bot.sendMessage(chatId, "¿Qué más deseas hacer?", {
                         reply_markup: {
-                            keyboard: [["➕ Agregar Método"], ["👀 Ver Teclado de Clientes"]],
+                            keyboard: [["➕ Agregar Método Estilizado"], ["👀 Ver Teclado de Clientes"]],
                             resize_keyboard: true
                         }
                     });
@@ -132,28 +128,23 @@ bot.on('message', async (msg) => {
                     bot.sendMessage(chatId, `❌ Error en Firebase: ${error.message}`);
                 }
             } else {
-                bot.sendMessage(chatId, "❌ Formato incorrecto. Recuerda separar los 4 datos por coma (,). Intenta de nuevo.");
+                bot.sendMessage(chatId, "❌ Formato incorrecto. Asegúrate de enviar las 6 líneas. Intenta de nuevo.");
             }
             return;
         }
     }
 
     // ================= FLUJO DEL CLIENTE =================
-    
-    // Si el usuario tocó un botón de país (ej. "📍 COLOMBIA")
     if (texto.startsWith("📍 ")) {
         const paisSeleccionado = texto.replace("📍 ", "").toLowerCase();
-        
-        // Guardamos el estado del usuario para saber de qué país va a escribir el monto
         estados[chatId] = { paso: "ESPERANDO_MONTO", pais: paisSeleccionado };
         
         return bot.sendMessage(chatId, `Elegiste **${paisSeleccionado.toUpperCase()}**.\n\nEscribe la cantidad que deseas pagar en **USD** (Mínimo 3):`, {
             parse_mode: "Markdown",
-            reply_markup: { remove_keyboard: true } // Ocultar teclado de países para que escriba el número
+            reply_markup: { remove_keyboard: true }
         });
     }
 
-    // Si el usuario está en el paso de escribir cuánto va a pagar
     if (estados[chatId] && estados[chatId].paso === "ESPERANDO_MONTO") {
         const montoUSD = parseFloat(texto);
         const pais = estados[chatId].pais;
@@ -168,26 +159,33 @@ bot.on('message', async (msg) => {
                 const data = snapshot.val();
                 const totalLocal = montoUSD * data.tasa;
 
-                let mensaje = `💰 **Total a pagar:** $${montoUSD} USD\n`;
-                mensaje += `💱 **Equivalente:** $${totalLocal.toLocaleString()} (Moneda Local)\n\n`;
-                mensaje += `🏦 **Métodos de pago:**\n\n`;
+                // Construimos el mensaje EXACTAMENTE con tu formato
+                let mensaje = `💰 *TOTAL A PAGAR:* $${montoUSD} USD\n`;
+                mensaje += `💱 *EQUIVALENTE:* $${totalLocal.toLocaleString('es-CO')} \n\n`; // Agregué el cálculo aquí arriba para que no se pierda la función
+                
+                const nombrePaisCapitalizado = pais.charAt(0).toUpperCase() + pais.slice(1);
+                mensaje += `🌍 *País:* ${nombrePaisCapitalizado}\n`;
+                mensaje += `💸 *Tasa:* ${data.tasa.toLocaleString('es-CO')}\n\n`;
+                
+                mensaje += `💳 *MÉTODOS DE PAGO DISPONIBLES:*\n\n`;
 
-                for (const [banco, cuenta] of Object.entries(data.metodos || {})) {
-                    mensaje += `• **${banco}**: \`${cuenta}\`\n`;
+                for (const key in data.metodos) {
+                    const met = data.metodos[key];
+                    mensaje += `${met.titulo}\n`;
+                    // Pongo la cuenta entre `backticks` para que se copie con un toque
+                    mensaje += `${met.etiqueta} \`${met.cuenta}\`\n`; 
+                    mensaje += `${met.instruccion}\n\n`;
                 }
                 
-                mensaje += "\n*(Toca el número de cuenta para copiarlo. Envía la foto del pago por aquí)*";
-                
                 bot.sendMessage(chatId, mensaje, {parse_mode: "Markdown"});
-                delete estados[chatId]; // Finaliza el proceso de este usuario
+                delete estados[chatId]; 
                 
-                // Mostrarle los botones de nuevo por si quiere cotizar otra cosa
                 mostrarTecladoPaises(chatId, "¿Necesitas revisar otro país?");
             }
         } catch (error) {
-            bot.sendMessage(chatId, "❌ Hubo un error al calcular.");
+            bot.sendMessage(chatId, "❌ Hubo un error al extraer los datos.");
         }
     }
 });
 
-console.log("🚀 Bot iniciado con botones. Listo para funcionar.");
+console.log("🚀 Bot iniciado con formato VIP.");
