@@ -80,7 +80,7 @@ bot.on('message', async (msg) => {
     if (chatId === ADMIN_ID) {
         if (texto === "➕ Agregar Método Estilizado") {
             estados[chatId] = { paso: "ESPERANDO_DATOS_MULTILINEA" };
-            const msjAyuda = `Envíame los datos EXACTAMENTE en este orden, separados por un salto de línea (Enter):\n\n1. País\n2. Tasa de cambio\n3. Título del Banco con emojis\n4. Etiqueta de la cuenta\n5. Número de cuenta\n6. Instrucción final\n\n*Copialo y edítalo:* 👇\n\nColombia\n3800\n🟡 *Bancolombia* (🏦 TRANSFERENCIA)\n📋 N° Cuenta:\n76900007797\n💡 Transferencia Ahorros Bancolombia`;
+            const msjAyuda = `Envíame los datos separados por un salto de línea (Enter). OJO: **Escribe la tasa sin puntos (ej: 3800)**.\n\n*Copia este formato y edítalo:* 👇\n\nColombia\n3800\n🟡 *Bancolombia* (🏦 TRANSFERENCIA)\n📋 N° Cuenta:\n76900007797\n💡 Transferencia Ahorros Bancolombia`;
             
             return bot.sendMessage(chatId, msjAyuda, {
                 parse_mode: "Markdown",
@@ -93,17 +93,18 @@ bot.on('message', async (msg) => {
         }
 
         if (estados[chatId] && estados[chatId].paso === "ESPERANDO_DATOS_MULTILINEA") {
-            const lineas = texto.split('\n'); // Separamos el mensaje por cada "Enter"
+            // Filtramos las líneas vacías por si diste un "Enter" de más
+            const lineas = texto.split('\n').map(l => l.trim()).filter(l => l !== ''); 
             
             if (lineas.length >= 6) {
-                const pais = lineas[0].trim().toLowerCase();
-                const tasa = parseFloat(lineas[1].trim());
-                const tituloBanco = lineas[2].trim();
-                const etiquetaCuenta = lineas[3].trim();
-                const numeroCuenta = lineas[4].trim();
-                const instruccion = lineas[5].trim();
+                const pais = lineas[0].toLowerCase();
+                // Si escribes 3800, lo lee perfecto. (Evita poner 3.800)
+                const tasa = parseFloat(lineas[1].replace(/,/g, '')); 
+                const tituloBanco = lineas[2];
+                const etiquetaCuenta = lineas[3];
+                const numeroCuenta = lineas[4];
+                const instruccion = lineas[5];
                 
-                // Usamos el número de cuenta como ID único para guardarlo en la base de datos
                 const idMetodo = numeroCuenta.replace(/\s+/g, ''); 
 
                 try {
@@ -115,7 +116,7 @@ bot.on('message', async (msg) => {
                         instruccion: instruccion
                     });
                     
-                    bot.sendMessage(chatId, `✅ ¡Éxito! Método agregado correctamente al país **${pais}**.`, {parse_mode: "Markdown"});
+                    bot.sendMessage(chatId, `✅ ¡Éxito! Método agregado a **${pais}**.`, {parse_mode: "Markdown"});
                     delete estados[chatId];
                     
                     bot.sendMessage(chatId, "¿Qué más deseas hacer?", {
@@ -128,7 +129,7 @@ bot.on('message', async (msg) => {
                     bot.sendMessage(chatId, `❌ Error en Firebase: ${error.message}`);
                 }
             } else {
-                bot.sendMessage(chatId, "❌ Formato incorrecto. Asegúrate de enviar las 6 líneas. Intenta de nuevo.");
+                bot.sendMessage(chatId, "❌ Faltan líneas. Recuerda que son 6 datos en total. Intenta de nuevo.");
             }
             return;
         }
@@ -159,9 +160,9 @@ bot.on('message', async (msg) => {
                 const data = snapshot.val();
                 const totalLocal = montoUSD * data.tasa;
 
-                // Construimos el mensaje EXACTAMENTE con tu formato
                 let mensaje = `💰 *TOTAL A PAGAR:* $${montoUSD} USD\n`;
-                mensaje += `💱 *EQUIVALENTE:* $${totalLocal.toLocaleString('es-CO')} \n\n`; // Agregué el cálculo aquí arriba para que no se pierda la función
+                // Formato de moneda para que se vea como $11,400 en lugar de 11.4
+                mensaje += `💱 *EQUIVALENTE:* $${totalLocal.toLocaleString('es-CO')} \n\n`; 
                 
                 const nombrePaisCapitalizado = pais.charAt(0).toUpperCase() + pais.slice(1);
                 mensaje += `🌍 *País:* ${nombrePaisCapitalizado}\n`;
@@ -169,12 +170,14 @@ bot.on('message', async (msg) => {
                 
                 mensaje += `💳 *MÉTODOS DE PAGO DISPONIBLES:*\n\n`;
 
+                // Filtro de seguridad para evitar 'undefined'
                 for (const key in data.metodos) {
                     const met = data.metodos[key];
-                    mensaje += `${met.titulo}\n`;
-                    // Pongo la cuenta entre `backticks` para que se copie con un toque
-                    mensaje += `${met.etiqueta} \`${met.cuenta}\`\n`; 
-                    mensaje += `${met.instruccion}\n\n`;
+                    if (typeof met === 'object' && met.titulo) {
+                        mensaje += `${met.titulo}\n`;
+                        mensaje += `${met.etiqueta} \`${met.cuenta}\`\n`; 
+                        mensaje += `${met.instruccion}\n\n`;
+                    }
                 }
                 
                 bot.sendMessage(chatId, mensaje, {parse_mode: "Markdown"});
@@ -187,5 +190,6 @@ bot.on('message', async (msg) => {
         }
     }
 });
+
 
 console.log("🚀 Bot iniciado con formato VIP.");
